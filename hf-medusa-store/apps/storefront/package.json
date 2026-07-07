@@ -8,7 +8,7 @@
     "medusa-storefront"
   ],
   "scripts": {
-    "dev": "next dev --turbopack -p 8008",
+    "dev": "next dev -p 8008",
     "build": "next build",
     "start": "next start -p 8008",
     "lint": "next lint",

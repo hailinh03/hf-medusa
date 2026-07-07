@@ -13,6 +13,24 @@ const S3_PATHNAME = process.env.MEDUSA_CLOUD_S3_PATHNAME
  */
 const nextConfig = {
   reactStrictMode: true,
+  // Dev on webpack (not Turbopack): Turbopack watches node_modules and blows past
+  // the Linux inotify watch limit on this monorepo. Webpack ignores these dirs so
+  // we don't need to raise fs.inotify.max_user_watches.
+  webpack: (config, { dev }) => {
+    if (dev) {
+      config.watchOptions = {
+        ...(config.watchOptions || {}),
+        ignored: [
+          "**/node_modules/**",
+          "**/.next/**",
+          "**/.git/**",
+          "**/.medusa/**",
+          "**/.turbo/**",
+        ],
+      }
+    }
+    return config
+  },
   logging: {
     fetches: {
       fullUrl: true,
