@@ -7,7 +7,7 @@
 !.env.*.example
 *.pem
 *.key
-
+CLAUDE.local.md
 # ── Dependencies ──
 node_modules/
 .pnp
