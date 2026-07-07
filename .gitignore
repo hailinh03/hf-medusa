@@ -8,6 +8,7 @@
 *.pem
 *.key
 CLAUDE.local.md
+*.local.md
 # ── Dependencies ──
 node_modules/
 .pnp

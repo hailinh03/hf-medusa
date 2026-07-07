@@ -1,11 +1,15 @@
 packages:
   - "apps/**"
   - "!apps/backend/.medusa/**"
+overrides:
+  "@types/react": "19.0.5"
+  "@types/react-dom": "19.0.5"
 onlyBuiltDependencies:
-  - '@medusajs/telemetry'
   - '@swc/core'
   - esbuild
   - msgpackr-extract
   - protobufjs
   - sharp
   - unrs-resolver
+allowBuilds:
+  '@medusajs/telemetry': true
