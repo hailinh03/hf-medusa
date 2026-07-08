@@ -4,6 +4,11 @@ packages:
 overrides:
   "@types/react": "19.0.5"
   "@types/react-dom": "19.0.5"
+  # Force a single react-router copy so the admin dashboard's <Router> context is
+  # shared by plugin admin UIs (e.g. @medusajs/draft-order). Two versions →
+  # "useLocation() may be used only in the context of a <Router>".
+  "react-router-dom": "6.30.4"
+  "react-router": "6.30.4"
 onlyBuiltDependencies:
   - '@swc/core'
   - esbuild
