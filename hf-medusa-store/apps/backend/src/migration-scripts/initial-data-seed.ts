@@ -147,7 +147,7 @@ const PRODUCTS: ProductSeed[] = [
   single('Yonex Aerosensa 30 (lông)', 'yonex-as30', 'SHU-AS30', 'Shuttlecocks', 850_000, 'Cầu lông vũ thi đấu, hộp 12 quả.', 130),
 
   // ── Ống cầu bulk (Tubes) ──
-  single('Yonex AS30 3-Tube', 'yonex-as30-3tube', 'TUB-AS30X3', 'Tubes', 1_300_000, 'Ống cầu Aerosensa 30.', 380),
+  single('Yonex AS30 3-Tube combo 3 ống', 'yonex-as30-3tube', 'TUB-AS30X3', 'Tubes', 2_300_000, 'Combo 3 ống cầu Aerosensa 30, giá tốt hơn/ống.', 380),
 ]
 
 export default async function initial_data_seed({
