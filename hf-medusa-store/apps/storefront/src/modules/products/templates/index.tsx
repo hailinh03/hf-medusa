@@ -6,6 +6,8 @@ import ProductOnboardingCta from "@modules/products/components/product-onboardin
 import ProductTabs from "@modules/products/components/product-tabs"
 import RelatedProducts from "@modules/products/components/related-products"
 import ProductInfo from "@modules/products/templates/product-info"
+import CompleteYourSetup from "@modules/suggestions/templates/complete-your-setup"
+import SuggestionsSkeleton from "@modules/suggestions/components/suggestions-skeleton"
 import SkeletonRelatedProducts from "@modules/skeletons/templates/skeleton-related-products"
 import { notFound } from "next/navigation"
 import { HttpTypes } from "@medusajs/types"
@@ -57,6 +59,20 @@ const ProductTemplate: React.FC<ProductTemplateProps> = ({
           </Suspense>
         </div>
       </div>
+      {/* "Complete Your Setup" — lazy, below the fold, never blocks LCP (SF-01) */}
+      <Suspense
+        fallback={
+          <div className="content-container my-10">
+            <SuggestionsSkeleton count={5} />
+          </div>
+        }
+      >
+        <CompleteYourSetup
+          productId={product.id}
+          countryCode={countryCode}
+          currencyCode={region.currency_code}
+        />
+      </Suspense>
       <div
         className="content-container my-16 small:my-32"
         data-testid="related-products-container"
