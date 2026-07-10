@@ -1,4 +1,4 @@
-import { MedusaService } from "@medusajs/framework/utils";
+﻿import { MedusaService } from "@medusajs/framework/utils";
 import SuggestionRule from "./models/suggestion-rule";
 import SuggestionRuleItem from "./models/suggestion-rule-item";
 import CartSuggestionCondition from "./models/cart-suggestion-condition";
@@ -6,13 +6,13 @@ import SuggestionEvent from "./models/suggestion-event";
 import CategoryComplementMapping from "./models/category-complement-mapping";
 
 /**
- * SuggestiveSellingService — SRS §2.1.
+ * SuggestiveSellingService - SRS section 2.1.
  * MedusaService auto-generates CRUD (list/retrieve/create/update/delete +
  * soft-delete) for every model below. This class adds thin data-access helpers
  * (SPEC A.3); cross-module reads (Product/Inventory/Order) live in evaluator.ts.
  */
 
-/** A rule is active-in-window at `at` (null bounds = always) — SF-01 step 4. */
+/** A rule is active within its configured time window (SF-01 step 4). */
 function inWindow(rule: any, at: Date): boolean {
   const from = rule.valid_from ? new Date(rule.valid_from) : null;
   const to = rule.valid_to ? new Date(rule.valid_to) : null;
@@ -51,18 +51,19 @@ class SuggestiveSellingService extends MedusaService({
    * Detect a (type,tier,priority) conflict for admin writes (SF-07 / KN-05).
    * Returns the conflicting rule id, or null. `excludeId` skips the row being updated.
    */
-  async findPriorityConflict(
+  async findPriorityConflicts(
     type: string,
     tier: string,
     priority: number,
     excludeId?: string,
-  ): Promise<string | null> {
+  ): Promise<Array<{ id: string; name: string }>> {
     const rows = await this.listSuggestionRules(
       { type, tier, priority },
-      { select: ["id"] },
+      { select: ["id", "name"] },
     );
-    const hit = rows.find((r: any) => r.id !== excludeId);
-    return hit ? hit.id : null;
+    return rows
+      .filter((rule: any) => rule.id !== excludeId)
+      .map((rule: any) => ({ id: rule.id, name: rule.name }));
   }
 
   /** Batch-insert analytics events; never throws (SF-08 fire-and-forget). */

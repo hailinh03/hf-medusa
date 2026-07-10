@@ -1,9 +1,9 @@
-import { getProductSuggestions } from "@lib/data/suggestions"
+﻿import { getProductSuggestions } from "@lib/data/suggestions"
 import { getCartId } from "@lib/data/cookies"
 import SuggestionRail from "../../components/suggestion-rail"
 
 /**
- * "Complete Your Setup" — product-level section (SF-01 / SUGG-001).
+ * Complete Your Setup product-level section (SF-01 / SUGG-001).
  * Server component: fetches suggestions, hides entirely when empty (EC-05).
  * Rendered lazily (Suspense) so it never blocks the product page LCP.
  */
@@ -27,7 +27,7 @@ export default async function CompleteYourSetup({
       data-testid="complete-your-setup"
     >
       <h2 className="text-xl-semi mb-6 text-ui-fg-base">
-        Hoàn thiện bộ đồ của bạn
+        Complete Your Setup
       </h2>
       <SuggestionRail
         context="product_view"

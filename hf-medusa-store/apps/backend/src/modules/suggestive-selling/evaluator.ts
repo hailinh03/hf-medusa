@@ -1,4 +1,4 @@
-import {
+﻿import {
   ContainerRegistrationKeys,
   Modules,
   QueryContext,
@@ -7,7 +7,6 @@ import { SUGGESTIVE_SELLING_MODULE } from "./index";
 import {
   PRODUCT_LIMIT,
   CART_LIMIT,
-  TIER1_MIN_SURVIVORS,
   CONSUMABLE_CATEGORIES,
   CR02_DEFAULT_BADGE,
   FREE_SHIPPING_THRESHOLD,
@@ -29,7 +28,7 @@ import {
 } from "./evaluator-logic";
 
 /**
- * EvaluationEngine — SPEC A.4–A.6 (SF-01/SF-02, SUGG-001/002/004).
+ * EvaluationEngine - SPEC A.4-A.6 (SF-01/SF-02, SUGG-001/002/004).
  *
  * `computeProductRaw` / `computeCartRaw` produce SHARED cacheable candidate
  * lists (self/inactive removed, no per-session state); personal filters run at
@@ -101,7 +100,7 @@ export class EvaluationEngine {
     return new Map(data.map((p: any) => [p.id, enrichOne(p)]));
   }
 
-  /** Fallback top-sellers (no 30-day order data yet → newest first, SPEC A.6). */
+  /** Fallback top sellers when 30-day sales data is unavailable: newest first. */
   private async fetchByCategories(
     categoryIds: string[],
     take: number,
@@ -162,7 +161,7 @@ export class EvaluationEngine {
     }
   }
 
-  // ═══════════════════════════ PRODUCT LEVEL (SF-01) ═══════════════════════════
+  // Product-level suggestions (SF-01)
 
   async computeProductRaw(productId: string): Promise<ProductSuggestion[]> {
     const key = productCacheKey(productId);
@@ -180,7 +179,7 @@ export class EvaluationEngine {
       (c: any) => c.id,
     );
 
-    // Tier 1 — manual curations, admin display order.
+    // Tier 1: manual curations in admin display order.
     const { data: linkedRules } = await this.query.graph({
       entity: "suggestion_rule",
       fields: [
@@ -198,7 +197,6 @@ export class EvaluationEngine {
       filters: {
         type: "product",
         is_active: true,
-        products: { id: productId },
       },
     });
     const now = new Date();
@@ -208,6 +206,10 @@ export class EvaluationEngine {
       behavioral: 3,
     };
     const rules = (linkedRules ?? [])
+      .filter((rule: any) =>
+        (rule.products ?? []).some((product: any) => product.id === productId),
+      )
+      .filter((rule: any) => rule.tier === "manual")
       .filter((rule: any) => {
         const from = rule.valid_from ? new Date(rule.valid_from) : null;
         const to = rule.valid_to ? new Date(rule.valid_to) : null;
@@ -258,8 +260,9 @@ export class EvaluationEngine {
 
     const result = [...tier1];
 
-    // Tier 2 — category-complement backfill when Tier-1 < 3 (BR-01).
-    if (tier1.length < TIER1_MIN_SURVIVORS && sourceCategoryIds.length) {
+    // Tier 2 candidate pool. Per-request filters run before ranking, so eligible
+    // Tier 1 stays first and Tier 2 fills the remaining slots up to 5.
+    if (sourceCategoryIds.length) {
       const complementCatIds: string[] = [];
       for (const catId of sourceCategoryIds) {
         const maps = await this.service.listComplements(catId);
@@ -278,7 +281,6 @@ export class EvaluationEngine {
       );
       topSellers.forEach((e, i) => {
         if (e.status !== "published") return;
-        if (result.length >= PRODUCT_LIMIT) return;
         if (result.some((r) => r.product_id === e.product_id)) return;
         result.push({
           ...e,
@@ -310,7 +312,7 @@ export class EvaluationEngine {
     return rankProductSuggestions(filtered);
   }
 
-  // ═══════════════════════════ CART LEVEL (SF-02) ═══════════════════════════
+  // Cart-level suggestions (SF-02)
 
   async computeCartRaw(
     cartId: string,
@@ -386,7 +388,7 @@ export class EvaluationEngine {
       return out;
     };
 
-    // CR-01 — category gap.
+    // CR-01: category gap.
     for (const catId of cartCategoryIds) {
       const maps = await this.service.listComplements(catId);
       for (const m of maps) {
@@ -399,7 +401,7 @@ export class EvaluationEngine {
       }
     }
 
-    // CR-02 — threshold nudge (D4/D5).
+    // CR-02: threshold nudge (D4/D5).
     const threshold = FREE_SHIPPING_THRESHOLD;
     if (cr02Fires(subtotal, threshold)) {
       const remaining = threshold - subtotal;
@@ -412,7 +414,7 @@ export class EvaluationEngine {
       );
     }
 
-    // CR-03 — brand affinity.
+    // CR-03: brand affinity.
     const brands = new Set<string>(
       lines.map((l) => (l.product?.metadata as any)?.brand).filter(Boolean),
     );
@@ -426,7 +428,7 @@ export class EvaluationEngine {
       );
     }
 
-    // CR-04 — consumable qty=1 → bulk (Phase-1 heuristic via complement category).
+    // CR-04: upgrade consumable quantity 1 to bulk (Phase 1 heuristic).
     for (const l of lines) {
       if ((l.quantity ?? 0) !== 1) continue;
       const consumable = (l.product?.categories ?? []).some((c: any) =>

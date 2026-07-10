@@ -1,4 +1,4 @@
-import { defineRouteConfig } from '@medusajs/admin-sdk'
+﻿import { defineRouteConfig } from '@medusajs/admin-sdk'
 import { Sparkles } from '@medusajs/icons'
 import {
   Container,
@@ -18,7 +18,7 @@ import {
 import { useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 
-// ── tiny admin API helper (cookie session) ──
+// Minimal Admin API helper using the cookie session.
 async function api(path: string, opts: RequestInit = {}) {
   const res = await fetch(`/admin${path}`, {
     credentials: 'include',
@@ -27,7 +27,7 @@ async function api(path: string, opts: RequestInit = {}) {
   })
   if (!res.ok) {
     const msg = await res.json().catch(() => ({}))
-    throw new Error(msg?.message || `${res.status} ${res.statusText}`)
+    throw new Error(msg?.customer_message || msg?.message || `${res.status} ${res.statusText}`)
   }
   return res.status === 204 ? {} : res.json()
 }
@@ -168,7 +168,7 @@ const SuggestionRulesPage = () => {
 
   const sourceProductSummary = (rule: any) => {
     const names = (rule.source_product_ids ?? []).map((id: string) => titleById.get(id) ?? id)
-    if (!names.length) return '—'
+    if (!names.length) return '-'
     return names.length > 2
       ? `${names.slice(0, 2).join(', ')} +${names.length - 2}`
       : names.join(', ')
@@ -185,7 +185,7 @@ const SuggestionRulesPage = () => {
 
       {isLoading ? (
         <div className="px-6 py-8">
-          <Text>Loading…</Text>
+          <Text>Loading...</Text>
         </div>
       ) : (
         <Table>
@@ -295,7 +295,7 @@ const SuggestionRulesPage = () => {
                 <Input
                   value={productSearch}
                   onChange={(event) => setProductSearch(event.target.value)}
-                  placeholder="Search products…"
+                  placeholder="Search products..."
                 />
                 <div className="max-h-52 overflow-y-auto rounded border border-ui-border-base">
                   {visibleProducts.map((product: any) => {
@@ -349,7 +349,7 @@ const SuggestionRulesPage = () => {
                       onValueChange={(v) => setItem(idx, { suggested_product_id: v })}
                     >
                       <Select.Trigger>
-                        <Select.Value placeholder="Product…" />
+                        <Select.Value placeholder="Product..." />
                       </Select.Trigger>
                       <Select.Content>
                         {products.map((p: any) => (
@@ -371,7 +371,7 @@ const SuggestionRulesPage = () => {
                     onClick={() => removeItem(idx)}
                     disabled={form.items.length === 1}
                   >
-                    ✕
+
                   </Button>
                 </div>
               ))}

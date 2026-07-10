@@ -1,11 +1,11 @@
-import { MedusaRequest, MedusaResponse } from '@medusajs/framework/http'
+﻿import { MedusaRequest, MedusaResponse } from '@medusajs/framework/http'
 import { SUGGESTIVE_SELLING_MODULE } from '../../../modules/suggestive-selling'
 import { CreateSuggestionRuleBody } from './validators'
-import { invalidateSuggestionCache, replaceSourceProductLinks, withSourceProducts } from './helpers'
+import { findPriorityConflict, invalidateSuggestionCache, replaceSourceProductLinks, withSourceProducts } from './helpers'
 import { AdminErrors } from '../../../lib/errors'
 
 /**
- * GET /admin/suggestion-rules — list rules (SRS §6.1).
+ * GET /admin/suggestion-rules --- list rules (SRS --6.1).
  * Query: type, is_active, limit, offset. Returns rules with items + conditions.
  */
 export const GET = async (req: MedusaRequest, res: MedusaResponse) => {
@@ -28,7 +28,7 @@ export const GET = async (req: MedusaRequest, res: MedusaResponse) => {
 }
 
 /**
- * POST /admin/suggestion-rules — create a rule with nested items + conditions.
+ * POST /admin/suggestion-rules --- create a rule with nested items + conditions.
  */
 export const POST = async (
   req: MedusaRequest<CreateSuggestionRuleBody>,
@@ -37,10 +37,13 @@ export const POST = async (
   const service: any = req.scope.resolve(SUGGESTIVE_SELLING_MODULE)
   const { items, conditions, source_product_ids, ...ruleData } = req.validatedBody
 
-  const conflict = await service.findPriorityConflict(
+const conflict = await findPriorityConflict(
+    req.scope,
+    service,
     ruleData.type,
     ruleData.tier,
-    ruleData.priority
+    ruleData.priority,
+    source_product_ids
   )
   if (conflict) {
     throw AdminErrors.rulePriorityConflict(conflict)

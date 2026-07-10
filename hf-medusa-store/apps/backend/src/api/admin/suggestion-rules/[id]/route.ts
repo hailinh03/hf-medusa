@@ -1,7 +1,8 @@
-import { MedusaRequest, MedusaResponse } from '@medusajs/framework/http'
+﻿import { MedusaRequest, MedusaResponse } from '@medusajs/framework/http'
 import { SUGGESTIVE_SELLING_MODULE } from '../../../../modules/suggestive-selling'
 import { UpdateSuggestionRuleBody } from '../validators'
 import {
+  findPriorityConflict,
   getSourceProductIds,
   invalidateSuggestionCache,
   replaceSourceProductLinks,
@@ -10,7 +11,7 @@ import {
 import { AdminErrors } from '../../../../lib/errors'
 
 /**
- * GET /admin/suggestion-rules/:id — retrieve one rule with items + conditions.
+ * GET /admin/suggestion-rules/:id --- retrieve one rule with items + conditions.
  */
 export const GET = async (req: MedusaRequest, res: MedusaResponse) => {
   const service: any = req.scope.resolve(SUGGESTIVE_SELLING_MODULE)
@@ -22,7 +23,7 @@ export const GET = async (req: MedusaRequest, res: MedusaResponse) => {
 }
 
 /**
- * PUT /admin/suggestion-rules/:id — update scalar fields; if items/conditions
+ * PUT /admin/suggestion-rules/:id --- update scalar fields; if items/conditions
  * are provided, they REPLACE the existing sets.
  */
 export const PUT = async (
@@ -34,16 +35,20 @@ export const PUT = async (
   const { items, conditions, source_product_ids, ...ruleData } = req.validatedBody
   const previousSourceProductIds = await getSourceProductIds(req.scope, id)
 
-  if (
+if (
     ruleData.type !== undefined ||
     ruleData.tier !== undefined ||
-    ruleData.priority !== undefined
+    ruleData.priority !== undefined ||
+    source_product_ids !== undefined
   ) {
     const current = await service.retrieveSuggestionRule(id)
-    const conflict = await service.findPriorityConflict(
+    const conflict = await findPriorityConflict(
+      req.scope,
+      service,
       ruleData.type ?? current.type,
       ruleData.tier ?? current.tier,
       ruleData.priority ?? current.priority,
+      source_product_ids ?? previousSourceProductIds,
       id
     )
     if (conflict) {
@@ -93,7 +98,7 @@ export const PUT = async (
 }
 
 /**
- * DELETE /admin/suggestion-rules/:id — soft delete (SRS §6.1: sets is_active=false
+ * DELETE /admin/suggestion-rules/:id --- soft delete (SRS --6.1: sets is_active=false
  * semantics via soft-delete; children cascade per model definition).
  */
 export const DELETE = async (req: MedusaRequest, res: MedusaResponse) => {
