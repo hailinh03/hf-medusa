@@ -1,7 +1,7 @@
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http";
 import { SUGGESTIVE_SELLING_MODULE } from "../../../modules/suggestive-selling";
-import { AdminErrors } from "../../../lib/errors";
-import { invalidateCategorySuggestions } from "../../../lib/suggestion-cache";
+import { createCategoryComplementWorkflow } from "../../../workflows/category-complement";
+
 
 /**
  * Admin category-complement mappings are the Tier 2 / CR-01 candidate source.
@@ -24,52 +24,14 @@ export const GET = async (req: MedusaRequest, res: MedusaResponse) => {
 };
 
 export const POST = async (req: MedusaRequest, res: MedusaResponse) => {
-  const service: any = req.scope.resolve(SUGGESTIVE_SELLING_MODULE);
   const body = (req.body ?? {}) as any;
-  const {
-    source_category_id,
-    complement_category_id,
-    display_order = 0,
-    is_active = true,
-  } = body;
-
-  if (!source_category_id || !complement_category_id) {
-    return res.status(422).json({
-      type: "invalid_data",
-      code: "VALIDATION_ERROR",
-      message: "source_category_id and complement_category_id are required",
-      customer_message: "Select a source category and a complement category.",
-    });
-  }
-
-  if (source_category_id === complement_category_id) {
-    return res.status(422).json({
-      type: "invalid_data",
-      code: "VALIDATION_ERROR",
-      message: "source and complement categories must be different",
-      customer_message: "Source and complement categories must be different.",
-    });
-  }
-  const dupes = await service.listCategoryComplementMappings(
-    { source_category_id, complement_category_id },
-    { select: ["id"] },
-  );
-  if (dupes.length) throw AdminErrors.complementPairDuplicate();
-
-  const orderConflicts = await service.listCategoryComplementMappings(
-    { source_category_id, display_order: Number(display_order) },
-    { select: ["id"] },
-  );
-  if (orderConflicts.length) {
-    throw AdminErrors.categoryDisplayOrderConflict(Number(display_order));
-  }
-
-  const category_complement = await service.createCategoryComplementMappings({
-    source_category_id,
-    complement_category_id,
-    display_order: Number(display_order),
-    is_active,
+  const { result: category_complement } = await createCategoryComplementWorkflow(req.scope).run({
+    input: {
+      source_category_id: body.source_category_id,
+      complement_category_id: body.complement_category_id,
+      display_order: Number(body.display_order ?? 0),
+      is_active: body.is_active ?? true,
+    },
   });
-  await invalidateCategorySuggestions(req.scope, source_category_id);
   res.status(201).json({ category_complement });
 };

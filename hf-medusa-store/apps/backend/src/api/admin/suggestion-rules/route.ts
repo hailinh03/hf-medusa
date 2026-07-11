@@ -1,8 +1,8 @@
 import { MedusaRequest, MedusaResponse } from '@medusajs/framework/http'
 import { SUGGESTIVE_SELLING_MODULE } from '../../../modules/suggestive-selling'
 import { CreateSuggestionRuleBody } from './validators'
-import { findPriorityConflict, invalidateSuggestionCache, replaceSourceProductLinks, withSourceProducts } from './helpers'
-import { AdminErrors } from '../../../lib/errors'
+import { withSourceProducts } from './helpers'
+import { createSuggestionRuleWorkflow } from '../../../workflows/suggestion-rule'
 
 /**
  * GET /admin/suggestion-rules --- list rules (SRS --6.1).
@@ -35,29 +35,8 @@ export const POST = async (
   req: MedusaRequest<CreateSuggestionRuleBody>,
   res: MedusaResponse
 ) => {
-  const service: any = req.scope.resolve(SUGGESTIVE_SELLING_MODULE)
-  const { items, conditions, source_product_ids, ...ruleData } = req.validatedBody
-
-const conflict = await findPriorityConflict(
-    req.scope,
-    service,
-    ruleData.type,
-    ruleData.tier,
-    ruleData.priority,
-    source_product_ids
-  )
-  if (conflict) {
-    throw AdminErrors.rulePriorityConflict(conflict)
-  }
-
-  const createdRule = await service.createSuggestionRules({
-    ...ruleData,
-    items,
-    conditions,
+  const { result: suggestion_rule } = await createSuggestionRuleWorkflow(req.scope).run({
+    input: req.validatedBody,
   })
-  await replaceSourceProductLinks(req.scope, createdRule.id, source_product_ids)
-
-  const [suggestion_rule] = await withSourceProducts(req.scope, [createdRule])
-  await invalidateSuggestionCache(req.scope, source_product_ids)
   res.status(201).json({ suggestion_rule })
 }

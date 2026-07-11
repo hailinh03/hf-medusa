@@ -7,12 +7,12 @@ import {
 } from "../modules/suggestive-selling/constants";
 
 /**
- * Cache + dismissal helpers â€” SPEC A.9 / D6 / BR-06.
+ * Cache + dismissal helpers Ã¢â‚¬â€ SPEC A.9 / D6 / BR-06.
  * Cache is optional (D11): if the CACHE module is absent, all ops no-op safely.
  * Dismissals are session-scoped server-side state (never in shared result cache).
  */
 
-const DISMISS_TTL = 24 * 60 * 60; // â‰¤24h (D6)
+const DISMISS_TTL = 24 * 60 * 60; // Ã¢â€°Â¤24h (D6)
 
 function cache(container: any): any | null {
   try {
@@ -54,6 +54,19 @@ export async function addDismissal(
   await c.set(key, [...set], DISMISS_TTL);
 }
 
+export async function removeDismissal(
+  container: any,
+  scope: string,
+  context: string,
+  productId: string,
+): Promise<void> {
+  const c = cache(container);
+  if (!c) return;
+  const key = dismissKey(scope, context);
+  const set = new Set<string>(((await c.get(key)) as string[]) ?? []);
+  set.delete(productId);
+  await c.set(key, [...set], DISMISS_TTL);
+}
 /** Invalidate the cart's cached suggestion result (SUGG-005, synchronous). */
 export async function invalidateCartSuggestions(
   container: any,

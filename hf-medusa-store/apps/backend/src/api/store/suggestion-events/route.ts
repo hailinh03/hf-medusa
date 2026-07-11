@@ -1,10 +1,10 @@
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http";
-import { SUGGESTIVE_SELLING_MODULE } from "../../../modules/suggestive-selling";
+import { createSuggestionEventsWorkflow } from "../../../workflows/suggestion-event";
 
 /**
- * POST /store/suggestion-events — SF-08 / SUGG-006 (API_CONTRACT §1.1, KN-11).
- * Batch interaction tracking (≤10), enum+id only (SEC-04, no free-text),
- * fire-and-forget → 202. Malformed events are dropped individually (never fail
+ * POST /store/suggestion-events Ã¢â‚¬â€ SF-08 / SUGG-006 (API_CONTRACT Ã‚Â§1.1, KN-11).
+ * Batch interaction tracking (Ã¢â€°Â¤10), enum+id only (SEC-04, no free-text),
+ * fire-and-forget Ã¢â€ â€™ 202. Malformed events are dropped individually (never fail
  * the whole batch). `add_to_cart` is emitted server-side by the add route.
  */
 
@@ -13,7 +13,6 @@ const CONTEXTS = new Set(["product_view", "cart"]);
 const MAX_BATCH = 10;
 
 export const POST = async (req: MedusaRequest, res: MedusaResponse) => {
-  const service: any = req.scope.resolve(SUGGESTIVE_SELLING_MODULE);
   const body = (req.body ?? {}) as any;
   const events: any[] = Array.isArray(body.events)
     ? body.events.slice(0, MAX_BATCH)
@@ -49,6 +48,7 @@ export const POST = async (req: MedusaRequest, res: MedusaResponse) => {
     });
   }
 
-  const accepted = await service.recordEvents(valid);
+  const { result } = await createSuggestionEventsWorkflow(req.scope).run({ input: { events: valid, best_effort: true } });
+  const accepted = result.accepted;
   res.status(202).json({ accepted, rejected });
 };

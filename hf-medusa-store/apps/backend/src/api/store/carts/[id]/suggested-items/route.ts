@@ -1,16 +1,16 @@
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http";
 import { ContainerRegistrationKeys } from "@medusajs/framework/utils";
-import { addToCartWorkflow } from "@medusajs/medusa/core-flows";
+import { addSuggestedItemWorkflow } from "../../../../../workflows/add-suggested-item";
 import { SUGGESTIVE_SELLING_MODULE } from "../../../../../modules/suggestive-selling";
 import { SuggestionErrors } from "../../../../../lib/errors";
-import { invalidateCartSuggestions } from "../../../../../lib/suggestion-cache";
+
 
 /**
- * POST /store/carts/:id/suggested-items — SF-03 / SUGG-003 (API_CONTRACT §1.1).
+ * POST /store/carts/:id/suggested-items Ã¢â‚¬â€ SF-03 / SUGG-003 (API_CONTRACT Ã‚Â§1.1).
  * One-tap add of a suggested item with attribution. Order of operations:
- *   validate attribution (SEC-01) → resolve variant (SUGG-104) →
- *   authoritative stock re-check (EC-07) → idempotency (EC-03) →
- *   add line item + attribution metadata → emit add_to_cart (SF-08) →
+ *   validate attribution (SEC-01) Ã¢â€ â€™ resolve variant (SUGG-104) Ã¢â€ â€™
+ *   authoritative stock re-check (EC-07) Ã¢â€ â€™ idempotency (EC-03) Ã¢â€ â€™
+ *   add line item + attribution metadata Ã¢â€ â€™ emit add_to_cart (SF-08) Ã¢â€ â€™
  *   invalidate cart cache (SUGG-005).
  *
  * Body: { variant_id?, product_id?, quantity=1, attribution:{rule_id, source_context, source_product_id} }
@@ -56,7 +56,7 @@ export const POST = async (req: MedusaRequest, res: MedusaResponse) => {
     (req.headers["Idempotency-Key"] as string) ??
     null;
 
-  // 1) Validate attribution rule (SEC-01) — forged/unknown rule ⇒ reject, add nothing.
+  // 1) Validate attribution rule (SEC-01) Ã¢â‚¬â€ forged/unknown rule Ã¢â€¡â€™ reject, add nothing.
   let tier: string | null = null;
   if (attribution.rule_id) {
     const rule = await service
@@ -85,7 +85,7 @@ export const POST = async (req: MedusaRequest, res: MedusaResponse) => {
     else throw SuggestionErrors.variantSelectionRequired(variants);
   }
 
-  // 3) Authoritative stock re-check (bypass advisory cache — EC-07).
+  // 3) Authoritative stock re-check (bypass advisory cache Ã¢â‚¬â€ EC-07).
   const { data: vRows } = await query.graph({
     entity: "variant",
     fields: AVAIL_FIELDS,
@@ -96,12 +96,12 @@ export const POST = async (req: MedusaRequest, res: MedusaResponse) => {
     throw SuggestionErrors.productInactive();
   if (!available(variant)) {
     throw SuggestionErrors.stockConflict(
-      variant.product?.title ?? "Sản phẩm",
+      variant.product?.title ?? "SÃ¡ÂºÂ£n phÃ¡ÂºÂ©m",
       variant.product?.id,
     );
   }
 
-  // 4) Idempotency (EC-03): replay of same key ⇒ return existing line, no double-add.
+  // 4) Idempotency (EC-03): replay of same key Ã¢â€¡â€™ return existing line, no double-add.
   const cartFields = [
     "id",
     "total",
@@ -140,44 +140,36 @@ export const POST = async (req: MedusaRequest, res: MedusaResponse) => {
   if (idempotencyKey) metadata.idempotency_key = idempotencyKey;
 
   try {
-    await addToCartWorkflow(req.scope).run({
+    await addSuggestedItemWorkflow(req.scope).run({
       input: {
         cart_id: cartId,
-        items: [{ variant_id: variantId, quantity, metadata }],
+        variant_id: variantId,
+        quantity,
+        metadata,
+        event: {
+          rule_id: attribution.rule_id ?? null,
+          source_context: attribution.source_context ?? "product_view",
+          source_product_id: attribution.source_product_id ?? null,
+          suggested_product_id: variant.product?.id,
+          customer_id: (req as any).auth_context?.actor_type === "customer" ? (req as any).auth_context.actor_id : null,
+          session_id: (req.headers["x-session-id"] as string) ?? null,
+          action: "add_to_cart",
+          tier,
+          slot: typeof body.slot === "number" ? body.slot : null,
+        },
       },
     });
   } catch (e: any) {
-    // Inventory shortfall surfaced by the workflow ⇒ stock conflict (EC-07).
+    // Inventory shortfall surfaced by the workflow Ã¢â€¡â€™ stock conflict (EC-07).
     const msg = String(e?.message ?? "");
     if (/inventor|stock|not enough|availab/i.test(msg)) {
       throw SuggestionErrors.stockConflict(
-        variant.product?.title ?? "Sản phẩm",
+        variant.product?.title ?? "SÃ¡ÂºÂ£n phÃ¡ÂºÂ©m",
         variant.product?.id,
       );
     }
     throw e;
   }
-
-  // 6) add_to_cart analytics (server-side, can't be forged — SF-08).
-  await service.recordEvents([
-    {
-      rule_id: attribution.rule_id ?? null,
-      source_context: attribution.source_context ?? "product_view",
-      source_product_id: attribution.source_product_id ?? null,
-      suggested_product_id: variant.product?.id,
-      customer_id:
-        (req as any).auth_context?.actor_type === "customer"
-          ? (req as any).auth_context.actor_id
-          : null,
-      session_id: (req.headers["x-session-id"] as string) ?? null,
-      action: "add_to_cart",
-      tier,
-      slot: typeof body.slot === "number" ? body.slot : null,
-    },
-  ]);
-
-  // 7) Invalidate cart suggestion cache (SUGG-005). cart.updated cascade handled by subscriber.
-  await invalidateCartSuggestions(req.scope, cartId);
 
   const { data: postRows } = await query.graph({
     entity: "cart",
