@@ -34,6 +34,16 @@ async function api(path: string, opts: RequestInit = {}) {
 }
 
 type ItemInput = { suggested_product_id: string; custom_label: string }
+type ConditionType = 'category_missing' | 'threshold_near' | 'brand_match' | 'consumable_upsell'
+type ConditionInput = { condition_type: ConditionType; condition_params: string }
+const defaultConditionParams = (type: ConditionType) => JSON.stringify(
+  type === 'category_missing' ? { source_category_ids: [] }
+    : type === 'threshold_near' ? { percentage: 0.15, badge_text: 'Add for FREE shipping!' }
+      : type === 'brand_match' ? { accessory_category_ids: [] }
+        : { consumable_category_ids: [], max_quantity: 1 },
+  null,
+  2
+)
 type RuleForm = {
   name: string
   type: 'product' | 'cart'
@@ -41,6 +51,7 @@ type RuleForm = {
   source_product_ids: string[]
   priority: number
   items: ItemInput[]
+  conditions: ConditionInput[]
   source_category_id: string
   complement_category_ids: string[]
 }
@@ -52,6 +63,7 @@ const EMPTY: RuleForm = {
   source_product_ids: [],
   priority: 0,
   items: [{ suggested_product_id: '', custom_label: '' }],
+  conditions: [{ condition_type: 'threshold_near', condition_params: defaultConditionParams('threshold_near') }],
   source_category_id: '',
   complement_category_ids: [],
 }
@@ -66,14 +78,20 @@ const SuggestionRulesPage = () => {
   const [editingComplementId, setEditingComplementId] = useState<string | null>(null)
   const [form, setForm] = useState<RuleForm>(EMPTY)
   const [productSearch, setProductSearch] = useState('')
-  const [activeTab, setActiveTab] = useState<'manual' | 'category'>('manual')
+  const [activeTab, setActiveTab] = useState<'manual' | 'cart' | 'category'>('manual')
   const [rulePage, setRulePage] = useState(0)
+  const [cartRulePage, setCartRulePage] = useState(0)
   const [mappingPage, setMappingPage] = useState(0)
 
   const { data, isLoading } = useQuery({
     queryKey: ['suggestion-rules', rulePage],
     queryFn: () =>
       api(`/suggestion-rules?type=product&tier=manual&limit=${PAGE_SIZE}&offset=${rulePage * PAGE_SIZE}`),
+  })
+  const { data: cartRuleData, isLoading: isCartLoading } = useQuery({
+    queryKey: ['cart-suggestion-rules', cartRulePage],
+    queryFn: () =>
+      api(`/suggestion-rules?type=cart&tier=manual&limit=${PAGE_SIZE}&offset=${cartRulePage * PAGE_SIZE}`),
   })
   const { data: productData } = useQuery({
     queryKey: ['products-mini'],
@@ -164,14 +182,19 @@ const SuggestionRulesPage = () => {
         tier: 'manual' as const,
         source_product_ids: form.type === 'product' ? form.source_product_ids : [],
         priority: Number(form.priority) || 0,
-        items: form.items
+        items: form.type === 'product' ? form.items
           .filter((i) => i.suggested_product_id)
           .map((i, order) => ({
             suggested_product_id: i.suggested_product_id,
             display_order: order,
             custom_label: i.custom_label || null,
-          })),
-        conditions: [],
+          })) : [],
+        conditions: form.type === 'cart'
+          ? form.conditions.map((condition) => ({
+              condition_type: condition.condition_type,
+              condition_params: JSON.parse(condition.condition_params || '{}'),
+            }))
+          : [],
       }
       return editingId
         ? api(`/suggestion-rules/${editingId}`, { method: 'PUT', body: JSON.stringify(payload) })
@@ -180,6 +203,7 @@ const SuggestionRulesPage = () => {
     onSuccess: () => {
       toast.success(form.tier === 'category' ? (editingComplementId ? 'Category mapping updated' : 'Category mappings created') : editingId ? 'Rule updated' : 'Rule created')
       qc.invalidateQueries({ queryKey: ['suggestion-rules'] })
+      qc.invalidateQueries({ queryKey: ['cart-suggestion-rules'] })
       qc.invalidateQueries({ queryKey: ['category-complements'] })
       setOpen(false)
     },
@@ -191,6 +215,7 @@ const SuggestionRulesPage = () => {
     onSuccess: () => {
       toast.success('Rule deleted')
       qc.invalidateQueries({ queryKey: ['suggestion-rules'] })
+      qc.invalidateQueries({ queryKey: ['cart-suggestion-rules'] })
       qc.invalidateQueries({ queryKey: ['category-complements'] })
     },
     onError: (e: any) => toast.error(e.message),
@@ -233,6 +258,12 @@ const SuggestionRulesPage = () => {
       priority: rule.priority ?? 0,
       source_category_id: '',
       complement_category_ids: [],
+      conditions: (rule.conditions ?? []).length
+        ? rule.conditions.map((condition: any) => ({
+            condition_type: condition.condition_type,
+            condition_params: JSON.stringify(condition.condition_params ?? {}, null, 2),
+          }))
+        : [{ condition_type: 'threshold_near', condition_params: defaultConditionParams('threshold_near') }],
       items: (rule.items ?? []).length
         ? rule.items.map((i: any) => ({
             suggested_product_id: i.suggested_product_id,
@@ -273,6 +304,30 @@ const SuggestionRulesPage = () => {
   const removeItem = (idx: number) =>
     setForm((f) => ({ ...f, items: f.items.filter((_, i) => i !== idx) }))
 
+  const conditionParams = (condition: ConditionInput): Record<string, any> => {
+    try { return JSON.parse(condition.condition_params || '{}') } catch { return {} }
+  }
+  const setConditionParam = (index: number, key: string, value: unknown) => {
+    const params = conditionParams(form.conditions[index])
+    setCondition(index, { condition_params: JSON.stringify({ ...params, [key]: value }, null, 2) })
+  }
+  const setCondition = (index: number, patch: Partial<ConditionInput>) =>
+    setForm((current) => ({
+      ...current,
+      conditions: current.conditions.map((condition, conditionIndex) =>
+        conditionIndex === index ? { ...condition, ...patch } : condition
+      ),
+    }))
+  const addCondition = () =>
+    setForm((current) => ({
+      ...current,
+      conditions: [...current.conditions, { condition_type: 'threshold_near', condition_params: defaultConditionParams('threshold_near') }],
+    }))
+  const removeCondition = (index: number) =>
+    setForm((current) => ({
+      ...current,
+      conditions: current.conditions.filter((_, conditionIndex) => conditionIndex !== index),
+    }))
   const toggleSourceProduct = (productId: string, checked: boolean) =>
     setForm((current) => ({
       ...current,
@@ -282,6 +337,9 @@ const SuggestionRulesPage = () => {
     }))
 
   const rules = data?.suggestion_rules ?? []
+  const cartRules = cartRuleData?.suggestion_rules ?? []
+  const cartRuleCount = cartRuleData?.count ?? 0
+  const cartRulePageCount = Math.ceil(cartRuleCount / PAGE_SIZE)
   const ruleCount = data?.count ?? 0
   const rulePageCount = Math.ceil(ruleCount / PAGE_SIZE)
   const mappingCount = categoryGroups.length
@@ -302,7 +360,7 @@ const SuggestionRulesPage = () => {
     <Container className="overflow-hidden p-0">
       <Tabs
         value={activeTab}
-        onValueChange={(value) => setActiveTab(value as 'manual' | 'category')}
+        onValueChange={(value) => setActiveTab(value as 'manual' | 'cart' | 'category')}
       >
         <div className="flex items-center justify-between px-6 py-4">
           <div>
@@ -314,14 +372,18 @@ const SuggestionRulesPage = () => {
           <Button
             size="small"
             variant="primary"
-            onClick={() => openCreate(activeTab === 'manual' ? 'manual' : 'category')}
+            onClick={() => {
+              openCreate(activeTab === 'category' ? 'category' : 'manual')
+              if (activeTab === 'cart') setForm({ ...EMPTY, type: 'cart' })
+            }}
           >
-            {activeTab === 'manual' ? 'Create manual rule' : 'Create category mapping'}
+            {activeTab === 'category' ? 'Create category mapping' : activeTab === 'cart' ? 'Create cart rule' : 'Create manual rule'}
           </Button>
         </div>
 
         <Tabs.List className="border-y border-ui-border-base px-6">
           <Tabs.Trigger value="manual">Manual Product Rules (Tier 1)</Tabs.Trigger>
+          <Tabs.Trigger value="cart">Cart Rules</Tabs.Trigger>
           <Tabs.Trigger value="category">Category Complements (Tier 2)</Tabs.Trigger>
         </Tabs.List>
 
@@ -398,6 +460,43 @@ const SuggestionRulesPage = () => {
           )}
         </Tabs.Content>
 
+        <Tabs.Content value="cart">
+          <div className="px-6 py-4">
+            <Heading level="h2">Cart Rules</Heading>
+            <Text size="small" className="text-ui-fg-subtle">
+              Configure cart-level rules, their conditions, and suggested products.
+            </Text>
+          </div>
+          {isCartLoading ? <div className="px-6 py-8"><Text>Loading...</Text></div> : (
+            <>
+              <Table>
+                <Table.Header><Table.Row>
+                  <Table.HeaderCell>Name</Table.HeaderCell>
+                  <Table.HeaderCell>Conditions</Table.HeaderCell>
+                  <Table.HeaderCell>Items</Table.HeaderCell>
+                  <Table.HeaderCell>Priority</Table.HeaderCell>
+                  <Table.HeaderCell className="text-right">Actions</Table.HeaderCell>
+                </Table.Row></Table.Header>
+                <Table.Body>
+                  {cartRules.map((rule: any) => (
+                    <Table.Row key={rule.id}>
+                      <Table.Cell>{rule.name}</Table.Cell>
+                      <Table.Cell>{(rule.conditions ?? []).map((condition: any) => condition.condition_type).join(', ') || '-'}</Table.Cell>
+                      <Table.Cell>{rule.items?.length ?? 0}</Table.Cell>
+                      <Table.Cell>{rule.priority}</Table.Cell>
+                      <Table.Cell className="text-right"><div className="flex justify-end gap-2">
+                        <Button size="small" variant="secondary" onClick={() => openEdit(rule)}>Edit</Button>
+                        <Button size="small" variant="danger" onClick={() => onDelete(rule)}>Delete</Button>
+                      </div></Table.Cell>
+                    </Table.Row>
+                  ))}
+                  {!cartRules.length && <Table.Row><Table.Cell><Text className="text-ui-fg-subtle">No cart rules yet.</Text></Table.Cell><Table.Cell /><Table.Cell /><Table.Cell /><Table.Cell /></Table.Row>}
+                </Table.Body>
+              </Table>
+              <Table.Pagination count={cartRuleCount} pageSize={PAGE_SIZE} pageIndex={cartRulePage} pageCount={cartRulePageCount} canPreviousPage={cartRulePage > 0} canNextPage={cartRulePage + 1 < cartRulePageCount} previousPage={() => setCartRulePage((page) => Math.max(0, page - 1))} nextPage={() => setCartRulePage((page) => page + 1)} />
+            </>
+          )}
+        </Tabs.Content>
         <Tabs.Content value="category">
           <div className="px-6 py-4">
             <Heading level="h2">Category Complements</Heading>
@@ -418,7 +517,7 @@ const SuggestionRulesPage = () => {
                   <Table.Cell>
                     <div className="flex flex-col">
                       <Text size="small" weight="plus">
-                        {categoryNameById.get(group.source_category_id) ?? group.source_category_id}
+                        {String(categoryNameById.get(group.source_category_id) ?? group.source_category_id)}
                       </Text>
                       <Text size="xsmall" className="text-ui-fg-subtle">
                         {group.mappings.length} complement categories
@@ -585,6 +684,59 @@ const SuggestionRulesPage = () => {
                   </div>
                 )}
 
+                {form.type === 'cart' && (
+                  <div className="flex flex-col gap-3 rounded border border-ui-border-base p-3">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <Label>Cart conditions</Label>
+                        <Text size="xsmall" className="text-ui-fg-subtle">All conditions must match for this rule to fire.</Text>
+                      </div>
+                      <Button size="small" variant="secondary" onClick={addCondition}>Add condition</Button>
+                    </div>
+                    {form.conditions.map((condition, index) => (
+                      <div key={index} className="flex flex-col gap-2 rounded bg-ui-bg-subtle p-3">
+                        <div className="flex items-center gap-2">
+                          <Select value={condition.condition_type} onValueChange={(value: ConditionType) => setCondition(index, { condition_type: value, condition_params: defaultConditionParams(value) })}>
+                            <Select.Trigger><Select.Value /></Select.Trigger>
+                            <Select.Content>
+                              <Select.Item value="category_missing">Category missing</Select.Item>
+                              <Select.Item value="threshold_near">Threshold near</Select.Item>
+                              <Select.Item value="brand_match">Brand match</Select.Item>
+                              <Select.Item value="consumable_upsell">Consumable upsell</Select.Item>
+                            </Select.Content>
+                          </Select>
+                          <Button size="small" variant="transparent" onClick={() => removeCondition(index)} disabled={form.conditions.length === 1}>X</Button>
+                        </div>
+                        {condition.condition_type === 'category_missing' && (
+                          <Select value={(conditionParams(condition).source_category_ids ?? [])[0] ?? ''} onValueChange={(value) => setConditionParam(index, 'source_category_ids', [value])}>
+                            <Select.Trigger><Select.Value placeholder="Source category" /></Select.Trigger>
+                            <Select.Content>{categories.map((category: any) => <Select.Item key={category.id} value={category.id}>{category.name}</Select.Item>)}</Select.Content>
+                          </Select>
+                        )}
+                        {condition.condition_type === 'threshold_near' && (
+                          <div className="grid grid-cols-2 gap-2">
+                            <Input type="number" step="0.01" min="0" max="1" value={conditionParams(condition).percentage ?? 0.15} onChange={(event) => setConditionParam(index, 'percentage', Number(event.target.value))} placeholder="Percentage" />
+                          </div>
+                        )}
+                        {condition.condition_type === 'brand_match' && (
+                          <Select value={(conditionParams(condition).accessory_category_ids ?? [])[0] ?? ''} onValueChange={(value) => setConditionParam(index, 'accessory_category_ids', [value])}>
+                            <Select.Trigger><Select.Value placeholder="Accessory category (optional)" /></Select.Trigger>
+                            <Select.Content>{categories.map((category: any) => <Select.Item key={category.id} value={category.id}>{category.name}</Select.Item>)}</Select.Content>
+                          </Select>
+                        )}
+                        {condition.condition_type === 'consumable_upsell' && (
+                          <div className="grid grid-cols-2 gap-2">
+                            <Select value={(conditionParams(condition).consumable_category_ids ?? [])[0] ?? ''} onValueChange={(value) => setConditionParam(index, 'consumable_category_ids', [value])}>
+                              <Select.Trigger><Select.Value placeholder="Consumable category" /></Select.Trigger>
+                              <Select.Content>{categories.map((category: any) => <Select.Item key={category.id} value={category.id}>{category.name}</Select.Item>)}</Select.Content>
+                            </Select>
+                            <Input type="number" min="0" value={conditionParams(condition).max_quantity ?? 1} onChange={(event) => setConditionParam(index, 'max_quantity', Number(event.target.value))} placeholder="Max quantity" />
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
                 <div className="flex flex-col gap-1">
                   <Label>Priority</Label>
                   <Input
@@ -599,6 +751,7 @@ const SuggestionRulesPage = () => {
                   </Text>
                 </div>
 
+                {form.type === 'product' && (
                 <div className="flex flex-col gap-2">
                   <div className="flex items-center justify-between">
                     <Label>Suggested items</Label>
@@ -643,6 +796,7 @@ const SuggestionRulesPage = () => {
                     </div>
                   ))}
                 </div>
+                )}
               </>
             )}
 
