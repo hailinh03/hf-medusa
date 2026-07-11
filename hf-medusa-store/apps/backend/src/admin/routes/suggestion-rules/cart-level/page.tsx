@@ -3,5 +3,5 @@ import SuggestionRulesManager from '../../../components/suggestive-selling/manag
 
 const CartLevelSuggestionsPage = () => <SuggestionRulesManager mode="cart" />
 
-export const config = defineRouteConfig({ label: 'Cart-Level Suggestions', rank: 2 })
+export const config = defineRouteConfig({ label: 'Cart Level', rank: 2 })
 export default CartLevelSuggestionsPage

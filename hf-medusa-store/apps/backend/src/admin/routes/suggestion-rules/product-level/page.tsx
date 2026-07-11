@@ -3,5 +3,5 @@ import SuggestionRulesManager from '../../../components/suggestive-selling/manag
 
 const ProductLevelSuggestionsPage = () => <SuggestionRulesManager mode="product" />
 
-export const config = defineRouteConfig({ label: 'Product-Level Suggestions', rank: 1 })
+export const config = defineRouteConfig({ label: 'Product Level', rank: 1 })
 export default ProductLevelSuggestionsPage
