@@ -4,6 +4,8 @@ import {
   QueryContext,
 } from "@medusajs/framework/utils";
 import { SUGGESTIVE_SELLING_MODULE } from "./index";
+import { matchesCartRule } from "./cart-rule-logic";
+import { getCartRuleVersion } from "../../lib/suggestion-cache";
 import {
   PRODUCT_LIMIT,
   CART_LIMIT,
@@ -68,6 +70,7 @@ const PRODUCT_FIELDS = [
 ];
 
 export class EvaluationEngine {
+  private container: any;
   private query: any;
   private service: any;
   private cache: any | null;
@@ -122,11 +125,30 @@ export class EvaluationEngine {
         order: { created_at: "DESC" },
       },
     });
-    return data
-      .map(enrichOne)
-      .filter((e: EnrichedProduct) => !excludeIds.has(e.product_id));
+    const candidates = data.map(enrichOne).filter((e: EnrichedProduct) => !excludeIds.has(e.product_id));
+    return this.rankByRecentSales(candidates);
   }
 
+  private async rankByRecentSales(products: EnrichedProduct[]): Promise<EnrichedProduct[]> {
+    if (products.length < 2) return products;
+    try {
+      const since = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+      const { data: orders } = await this.query.graph({
+        entity: "order",
+        fields: ["id", "items.product_id", "items.quantity"],
+        filters: { created_at: { $gte: since } },
+      });
+      const sold = new Map<string, number>();
+      for (const order of orders ?? []) {
+        for (const item of order.items ?? []) {
+          if (item.product_id) sold.set(item.product_id, (sold.get(item.product_id) ?? 0) + (item.quantity ?? 0));
+        }
+      }
+      return products.slice().sort((a, b) => (sold.get(b.product_id) ?? 0) - (sold.get(a.product_id) ?? 0) || a.product_id.localeCompare(b.product_id));
+    } catch {
+      return products;
+    }
+  }
   private async purchasedDurableProductIds(
     customerId?: string | null,
   ): Promise<Set<string>> {
@@ -324,7 +346,7 @@ export class EvaluationEngine {
   async computeCartRaw(
     cartId: string,
   ): Promise<{ candidates: CartSuggestion[]; threshold_info: any | null }> {
-    const key = cartCacheKey(cartId);
+    const key = cartCacheKey(cartId, await getCartRuleVersion(this.container));
     if (this.cache) {
       const hit = await this.cache.get(key);
       if (hit) return hit as any;
@@ -332,17 +354,7 @@ export class EvaluationEngine {
 
     const { data: cartRows } = await this.query.graph({
       entity: "cart",
-      fields: [
-        "id",
-        "currency_code",
-        "item_total",
-        "items.product_id",
-        "items.quantity",
-        "items.unit_price",
-        "items.product.categories.id",
-        "items.product.categories.name",
-        "items.product.metadata",
-      ],
+      fields: ["id", "currency_code", "item_total", "items.product_id", "items.quantity", "items.unit_price", "items.product.categories.id", "items.product.categories.name", "items.product.metadata"],
       filters: { id: cartId },
     });
     const cart = cartRows?.[0];
@@ -353,109 +365,76 @@ export class EvaluationEngine {
     }
 
     const lines: any[] = cart.items ?? [];
-    const cartProductIds = new Set<string>(lines.map((l) => l.product_id));
-    const cartCategoryIds = new Set<string>(
-      lines.flatMap((l) => (l.product?.categories ?? []).map((c: any) => c.id)),
-    );
-    const subtotal =
-      cart.item_total ??
-      lines.reduce((s, l) => s + (l.unit_price ?? 0) * (l.quantity ?? 0), 0);
-
-    const collected: {
-      e: EnrichedProduct;
-      code: string;
-      badge: string | null;
-    }[] = [];
+    const cartProductIds = new Set<string>(lines.map((line) => line.product_id));
+    const cartCategoryIds = new Set<string>(lines.flatMap((line) => (line.product?.categories ?? []).map((category: any) => category.id)));
+    const subtotal = cart.item_total ?? lines.reduce((sum, line) => sum + (line.unit_price ?? 0) * (line.quantity ?? 0), 0);
+    const brands = [...new Set<string>(lines.map((line) => (line.product?.metadata as any)?.brand).filter(Boolean))];
+    const context = {
+      subtotal,
+      categoryIds: [...cartCategoryIds],
+      brands,
+      lines: lines.map((line) => ({ quantity: line.quantity ?? 0, categoryIds: (line.product?.categories ?? []).map((category: any) => category.id), categoryNames: (line.product?.categories ?? []).map((category: any) => category.name) })),
+    };
+    const exclude = new Set<string>(cartProductIds);
+    const candidates: CartSuggestion[] = [];
     let thresholdInfo: any | null = null;
-    const baseExclude = new Set<string>([...cartProductIds]);
 
-    const push = async (
-      catIds: string[],
-      code: string,
-      badge: string | null,
-      band?: { min: number; max: number },
-      brand?: string,
-    ) => {
-      let cands = await this.fetchByCategories(catIds, CART_LIMIT, baseExclude);
-      cands = cands.filter((c) => c.in_stock && c.status === "published");
-      if (band)
-        cands = cands.filter(
-          (c) => c.price != null && c.price >= band.min && c.price <= band.max,
-        );
-      if (brand) cands = cands.filter((c) => c.brand === brand);
-      for (const e of cands) collected.push({ e, code, badge });
+    const append = (products: EnrichedProduct[], rule: any, code: string, badge: string | null) => {
+      for (const product of products) {
+        if (exclude.has(product.product_id) || !product.in_stock || product.status !== "published") continue;
+        exclude.add(product.product_id);
+        candidates.push({ ...product, tier: "cart", rule_id: rule.id, rule_code: code, badge_text: badge });
+      }
+    };
+    const complementsOf = async (sourceIds: string[]) => {
+      const ids: string[] = [];
+      for (const sourceId of sourceIds) {
+        const mappings = await this.service.listComplements(sourceId);
+        ids.push(...mappings.map((mapping: any) => mapping.complement_category_id));
+      }
+      return [...new Set(ids)];
     };
 
-    const complementsOf = async (): Promise<string[]> => {
-      const out: string[] = [];
-      for (const catId of cartCategoryIds) {
-        const maps = await this.service.listComplements(catId);
-        out.push(...maps.map((m: any) => m.complement_category_id));
+    const rules = await this.service.listActiveCartRules();
+    for (const rule of rules) {
+      const conditions = rule.conditions ?? [];
+      if (!matchesCartRule(conditions, context)) continue;
+
+      for (const condition of conditions) {
+        const params = condition.condition_params ?? {};
+        if (condition.condition_type === "category_missing") {
+          const sources: string[] = params.source_category_ids ?? [];
+          const activeSources = sources.filter((id) => cartCategoryIds.has(id));
+          const complementIds = (await complementsOf(activeSources)).filter((id) => !cartCategoryIds.has(id));
+          append(await this.fetchByCategories(complementIds, CART_LIMIT, exclude), rule, "CR-01", null);
+        } else if (condition.condition_type === "threshold_near") {
+          const pct = Number(params.percentage ?? 0.15);
+          if (!cr02Fires(subtotal, FREE_SHIPPING_THRESHOLD, pct)) continue;
+          const remaining = FREE_SHIPPING_THRESHOLD - subtotal;
+          thresholdInfo = { target: FREE_SHIPPING_THRESHOLD, current: subtotal, remaining };
+          const products = await this.fetchByCategories(await complementsOf([...cartCategoryIds]), CART_LIMIT, exclude);
+          append(products.filter((product) => product.price != null && product.price >= remaining && product.price <= remaining * 2), rule, "CR-02", params.badge_text ?? CR02_DEFAULT_BADGE);
+        } else if (condition.condition_type === "brand_match") {
+          if (brands.length !== 1) continue;
+          const configured: string[] = params.accessory_category_ids ?? [];
+          const categoryIds = configured.length ? configured : await complementsOf([...cartCategoryIds]);
+          append((await this.fetchByCategories(categoryIds, CART_LIMIT, exclude)).filter((product) => product.brand === brands[0]), rule, "CR-03", null);
+        } else if (condition.condition_type === "consumable_upsell") {
+          const configured: string[] = params.consumable_category_ids ?? [];
+          const maxQuantity = Number(params.max_quantity ?? 1);
+          const sourceIds = lines.filter((line) => line.quantity <= maxQuantity && (!configured.length || (line.product?.categories ?? []).some((category: any) => configured.includes(category.id)))).map((line) => line.product_id);
+          if (!sourceIds.length) continue;
+          const mappings = await this.service.listProductBulkMappings({ source_product_id: sourceIds, is_active: true }, { order: { priority: "ASC" } });
+          const enriched = await this.enrich(mappings.map((mapping: any) => mapping.bulk_product_id));
+          append(mappings.map((mapping: any) => enriched.get(mapping.bulk_product_id)).filter(Boolean) as EnrichedProduct[], rule, "CR-04", null);
+        }
       }
-      return out;
-    };
-
-    // CR-01: category gap.
-    for (const catId of cartCategoryIds) {
-      const maps = await this.service.listComplements(catId);
-      for (const m of maps) {
-        const compHasItem = lines.some((l) =>
-          (l.product?.categories ?? []).some(
-            (c: any) => c.id === m.complement_category_id,
-          ),
-        );
-        if (!compHasItem) await push([m.complement_category_id], "CR-01", null);
-      }
     }
 
-    // CR-02: threshold nudge (D4/D5).
-    const threshold = FREE_SHIPPING_THRESHOLD;
-    if (cr02Fires(subtotal, threshold)) {
-      const remaining = threshold - subtotal;
-      thresholdInfo = { target: threshold, current: subtotal, remaining };
-      await push(
-        await complementsOf(),
-        "CR-02",
-        CR02_DEFAULT_BADGE,
-        cr02Band(remaining),
-      );
-    }
-
-    // CR-03: brand affinity.
-    const brands = new Set<string>(
-      lines.map((l) => (l.product?.metadata as any)?.brand).filter(Boolean),
-    );
-    if (brands.size === 1) {
-      await push(
-        await complementsOf(),
-        "CR-03",
-        null,
-        undefined,
-        [...brands][0],
-      );
-    }
-
-    // CR-04: upgrade consumable quantity 1 to bulk (Phase 1 heuristic).
-    for (const l of lines) {
-      if ((l.quantity ?? 0) !== 1) continue;
-      const consumable = (l.product?.categories ?? []).some((c: any) =>
-        CONSUMABLE_CATEGORIES.includes(c.name),
-      );
-      if (!consumable) continue;
-      const comp: string[] = [];
-      for (const c of l.product?.categories ?? []) {
-        const maps = await this.service.listComplements(c.id);
-        comp.push(...maps.map((m: any) => m.complement_category_id));
-      }
-      await push(comp, "CR-04", null);
-    }
-
-    const candidates = mergeDedupeCart(collected, Number.MAX_SAFE_INTEGER); // dedupe now; cap at request
-    const out = { candidates, threshold_info: thresholdInfo };
+    const out = { candidates: candidates.slice(0, CART_LIMIT), threshold_info: thresholdInfo };
     if (this.cache) await this.cache.set(key, out, SUGGESTION_CACHE_TTL);
     return out;
   }
-
   async evaluateCart(
     cartId: string,
     ctx: CartEvalCtx = {},

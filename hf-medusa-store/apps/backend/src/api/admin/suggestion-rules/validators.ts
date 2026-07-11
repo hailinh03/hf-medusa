@@ -1,7 +1,7 @@
 import { z } from '@medusajs/framework/zod'
 
 /**
- * Zod validators for admin suggestion-rule APIs (SRS §6.1).
+ * Zod validators for admin suggestion-rule APIs (SRS Ã‚Â§6.1).
  * validateAndTransformBody (see src/api/middlewares.ts) parses the request body
  * with these and populates req.validatedBody.
  */
@@ -12,15 +12,12 @@ const RuleItemInput = z.object({
   custom_label: z.string().nullish(),
 })
 
-const CartConditionInput = z.object({
-  condition_type: z.enum([
-    'category_missing',
-    'threshold_near',
-    'brand_match',
-    'consumable_upsell',
-  ]),
-  condition_params: z.record(z.string(), z.any()).nullish(),
-})
+const CartConditionInput = z.discriminatedUnion('condition_type', [
+  z.object({ condition_type: z.literal('category_missing'), condition_params: z.object({ source_category_ids: z.array(z.string().min(1)).min(1) }) }),
+  z.object({ condition_type: z.literal('threshold_near'), condition_params: z.object({ percentage: z.number().min(0).max(1).default(0.15), badge_text: z.string().nullish() }) }),
+  z.object({ condition_type: z.literal('brand_match'), condition_params: z.object({ accessory_category_ids: z.array(z.string().min(1)).default([]) }) }),
+  z.object({ condition_type: z.literal('consumable_upsell'), condition_params: z.object({ consumable_category_ids: z.array(z.string().min(1)).default([]), max_quantity: z.number().int().nonnegative().default(1) }) }),
+])
 
 export const CreateSuggestionRuleSchema = z.object({
   name: z.string().min(1),

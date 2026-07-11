@@ -1,9 +1,10 @@
-﻿import { MedusaService } from "@medusajs/framework/utils";
+import { MedusaService } from "@medusajs/framework/utils";
 import SuggestionRule from "./models/suggestion-rule";
 import SuggestionRuleItem from "./models/suggestion-rule-item";
 import CartSuggestionCondition from "./models/cart-suggestion-condition";
 import SuggestionEvent from "./models/suggestion-event";
 import CategoryComplementMapping from "./models/category-complement-mapping";
+import ProductBulkMapping from "./models/product-bulk-mapping";
 
 /**
  * SuggestiveSellingService - SRS section 2.1.
@@ -27,12 +28,13 @@ class SuggestiveSellingService extends MedusaService({
   CartSuggestionCondition,
   SuggestionEvent,
   CategoryComplementMapping,
+  ProductBulkMapping,
 }) {
   /** Active cart-level rules ordered by priority asc (SF-02 step 4 / BR-03). */
   async listActiveCartRules(at: Date = new Date()) {
     const rules = await this.listSuggestionRules(
       { type: "cart", is_active: true },
-      { relations: ["conditions"] },
+      { relations: ["conditions", "items"] },
     );
     return rules
       .filter((r: any) => inWindow(r, at))
