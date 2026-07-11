@@ -1,5 +1,6 @@
 import { createStep, StepResponse } from '@medusajs/framework/workflows-sdk'
 import { SUGGESTIVE_SELLING_MODULE } from '../../../modules/suggestive-selling'
+import { bumpCartRuleVersion } from '../../../lib/suggestion-cache'
 import { AdminErrors } from '../../../lib/errors'
 import { findPriorityConflict, getSourceProductIds, invalidateSuggestionCache, replaceSourceProductLinks, withSourceProducts } from '../../../api/admin/suggestion-rules/helpers'
 import type { RuleUpdateInput } from '../types'
@@ -26,6 +27,7 @@ export const updateSuggestionRuleStep = createStep('update-suggestion-rule', asy
   const updated = await service.retrieveSuggestionRule(id, { relations: ['items', 'conditions'] })
   const [result] = await withSourceProducts(container, [updated])
   await invalidateSuggestionCache(container, [...previousSourceProductIds, ...result.source_product_ids])
+  if (previous.type === 'cart' || updated.type === 'cart') await bumpCartRuleVersion(container)
   return new StepResponse(result, { previous, previousSourceProductIds })
 }, async (data, { container }) => {
   if (!data) return
@@ -40,4 +42,5 @@ export const updateSuggestionRuleStep = createStep('update-suggestion-rule', asy
   if (conditions.length) await service.createCartSuggestionConditions(conditions.map(({ id: _id, ...item }: any) => ({ ...item, rule_id: rule.id })))
   await replaceSourceProductLinks(container, rule.id, data.previousSourceProductIds)
   await invalidateSuggestionCache(container, data.previousSourceProductIds)
+  if ((data.previous as any).type === 'cart') await bumpCartRuleVersion(container)
 })

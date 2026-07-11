@@ -4,15 +4,16 @@ import {
   dismissKey,
   productCacheKey,
   cartCacheKey,
+  CART_RULE_VERSION_KEY,
 } from "../modules/suggestive-selling/constants";
 
 /**
- * Cache + dismissal helpers Ã¢â‚¬â€ SPEC A.9 / D6 / BR-06.
+ * Cache + dismissal helpers ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â SPEC A.9 / D6 / BR-06.
  * Cache is optional (D11): if the CACHE module is absent, all ops no-op safely.
  * Dismissals are session-scoped server-side state (never in shared result cache).
  */
 
-const DISMISS_TTL = 24 * 60 * 60; // Ã¢â€°Â¤24h (D6)
+const DISMISS_TTL = 24 * 60 * 60; // ÃƒÂ¢Ã¢â‚¬Â°Ã‚Â¤24h (D6)
 
 function cache(container: any): any | null {
   try {
@@ -67,6 +68,19 @@ export async function removeDismissal(
   set.delete(productId);
   await c.set(key, [...set], DISMISS_TTL);
 }
+export async function getCartRuleVersion(container: any): Promise<number> {
+  const c = cache(container);
+  if (!c) return 0;
+  return Number((await c.get(CART_RULE_VERSION_KEY)) ?? 0);
+}
+
+export async function bumpCartRuleVersion(container: any): Promise<number> {
+  const c = cache(container);
+  if (!c) return 0;
+  const next = (await getCartRuleVersion(container)) + 1;
+  await c.set(CART_RULE_VERSION_KEY, next);
+  return next;
+}
 /** Invalidate the cart's cached suggestion result (SUGG-005, synchronous). */
 export async function invalidateCartSuggestions(
   container: any,
@@ -74,7 +88,7 @@ export async function invalidateCartSuggestions(
 ): Promise<void> {
   const c = cache(container);
   if (!c) return;
-  await c.invalidate(cartCacheKey(cartId));
+  await c.invalidate(cartCacheKey(cartId, await getCartRuleVersion(container)));
 }
 
 /** Invalidate a product's cached suggestion result (rule change / stock-out). */

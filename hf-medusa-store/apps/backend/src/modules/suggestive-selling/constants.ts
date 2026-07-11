@@ -34,6 +34,7 @@ export const FREE_SHIPPING_THRESHOLD = 7_000_000; // VND
 // Cache key builders (BR-06). Phase 1 uses a single store, so no store segment.
 export const productCacheKey = (productId: string) =>
   `suggest:product:v3:${productId}`;
-export const cartCacheKey = (cartId: string) => `suggest:cart:${cartId}`;
+export const CART_RULE_VERSION_KEY = "suggest:cart-rules:version";
+export const cartCacheKey = (cartId: string, version = 0) => `suggest:cart:v${version}:${cartId}`;
 export const dismissKey = (scope: string, context: string) =>
   `suggest:dismiss:${scope}:${context}`;
