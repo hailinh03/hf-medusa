@@ -67,3 +67,30 @@ Backend tests (from `apps/backend/`):
 ## Current work
 
 - `suggestive-selling` module (cross-sell / complementary products) — under active development
+
+
+# Local Repository Rules
+
+## Repository inspection
+
+* Prefer the built-in `Read`, `Grep`, and `Glob` tools for inspecting repository files, `node_modules`, and installed package source.
+* Do not use Bash commands such as `grep`, `sed`, `awk`, `find`, `head`, `tail`, or `cat` merely to read or search source files.
+* Do not use shell variables, pipes, redirects, command chains, or compound Bash commands for repository inspection.
+* Do not delegate source inspection to subagents that rely on Bash commands.
+* If a source file cannot be inspected with `Read`, `Grep`, or `Glob`, mark the related item as `[NEEDS_VERIFICATION]` instead of requesting Bash permission.
+
+## Bash usage
+
+* Use Bash only for tasks that cannot reasonably be completed with the built-in inspection tools.
+* When Bash is required, use one simple, single-purpose command.
+* Do not run migrations, database mutation commands, destructive Git commands, Docker cleanup commands, dependency installation, deployment commands, or other destructive operations without explicit user approval.
+
+## Current VoucherEngine task
+
+* Only modify:
+
+  `.claude/specs/voucher-engine/SPEC.md`
+
+* Do not create or modify source code, migrations, tests, routes, workflows, modules, configuration files, or seed files.
+
+* After revising the SPEC, stop and wait for manual review and approval.
